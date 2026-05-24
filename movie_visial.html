@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>电影评分分析可视化平台</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft YaHei";}
+        body {background:#f5f5f5;padding:20px;}
+        .container {max-width:1800px;margin:0 auto;}
+        .title {text-align:center;font-size:32px;color:#333;margin:20px 0;font-weight:bold;}
+        .module {background:#fff;border-radius:8px;padding:25px;margin-bottom:30px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}
+        .module-title {font-size:24px;color:#409EFF;margin-bottom:20px;padding-bottom:10px;border-bottom:2px solid #eee;}
+        .chart-row {display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px;}
+        .chart-item {flex:1;min-width:45%;height:450px;position:relative;}
+        .chart-subtitle {font-size:18px;color:#666;margin-bottom:10px;text-align:center;}
+        .chart-box {width:100%;height:90%;border:1px solid #eee;border-radius:4px;}
+        .loading {position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;color:#999;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">电影评分分析可视化平台</h1>
+
+        <div class="module">
+            <h2 class="module-title">5.1 用户行为分析</h2>
+            <div class="chart-row">
+                <div class="chart-item">
+                    <div class="chart-subtitle">5.1.1 用户整体评分分布</div>
+                    <div id="chart_5_1_1" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+                <div class="chart-item">
+                    <div class="chart-subtitle">5.1.2 高活跃用户贡献分析（前10%）</div>
+                    <div id="chart_5_1_2_10" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-item" style="min-width:95%;">
+                    <div class="chart-subtitle">5.1.2 Top50活跃用户评分次数排行</div>
+                    <div id="chart_5_1_2_50" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-item" style="min-width:95%;">
+                    <div class="chart-subtitle">5.1.3 各用户最喜欢的电影类型（占比最高）</div>
+                    <div id="chart_5_1_3" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="module">
+            <h2 class="module-title">5.2 电影特征分析</h2>
+            <div class="chart-item" style="width:100%;">
+                <div class="chart-subtitle">5.2.1 电影类型数量占比分布</div>
+                <div id="chart_5_2_1" class="chart-box"><div class="loading">加载中...</div></div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-item" style="min-width:95%;">
+                    <div class="chart-subtitle">5.2.2 高评分电影Top20（评分次数≥15）</div>
+                    <div id="chart_5_2_2" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="module">
+            <h2 class="module-title">5.3 关联特征分析</h2>
+            <div class="chart-row">
+                <div class="chart-item">
+                    <div class="chart-subtitle">5.3.1 评分一致性等级分布</div>
+                    <div id="chart_5_3_1_dist" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+                <div class="chart-item">
+                    <div class="chart-subtitle">5.3.1 不同一致性等级的评分差值分布</div>
+                    <div id="chart_5_3_1_user" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-item">
+                    <div class="chart-subtitle">5.3.2 高分电影（≥4.0）标签分布</div>
+                    <div id="chart_5_3_2_high" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+                <div class="chart-item">
+                    <div class="chart-subtitle">5.3.2 低分电影（≤2.0）标签分布</div>
+                    <div id="chart_5_3_2_low" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-item" style="min-width:95%;">
+                    <div class="chart-subtitle">5.3.3 用户对作品标签的评分偏好（TOP20）</div>
+                    <div id="chart_5_3_3" class="chart-box"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function initEchart(chartId) {
+            const el = document.getElementById(chartId);
+            if (!el) {
+                console.error(`未找到图表容器：${chartId}`);
+                return null;
+            }
+            el.innerHTML = "";
+            const chart = echarts.init(el);
+            return chart;
+        }
+
+        const JSON_BASE_URL = "/movie_json/";
+
+        async function loadJsonFile(fileName) {
+            try {
+                console.log(` 正在加载：${JSON_BASE_URL}${fileName}`);
+                const response = await fetch(`${JSON_BASE_URL}${fileName}`);
+                if (!response.ok) throw new Error(`HTTP状态码：${response.status}`);
+                const data = await response.json();
+                console.log(` 加载成功，数据长度：${Array.isArray(data) ? data.length : '对象'}`);
+                return data;
+            } catch (error) {
+                console.error(` 加载失败：${error.message}`);
+                return null;
+            }
+        }
+
+        async function render511() {
+            const chart = initEchart("chart_5_1_1");
+            const data = await loadJsonFile("5.1.1_rating_dist.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.1.1 数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const yData = data.map(item => item["评分频次"]);
+            const xData = [1, 2, 3, 4, 5];
+
+            chart.setOption({
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        const item = data[params.dataIndex];
+                        return `评分：${item.Rating}<br/>评分频次：${item["评分频次"]}次<br/>占比：${item["占比(%)"]}%`;
+                    }
+                },
+                xAxis: {
+                    type: 'category',
+                    data: xData,
+                    name: '评分',
+                    nameTextStyle: { fontSize: 14 }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '评分频次',
+                    nameTextStyle: { fontSize: 14 },
+                    min: 0
+                },
+                series: [{
+                    name: '评分频次',
+                    type: 'bar',
+                    data: yData,
+                    itemStyle: { color: '#409EFF' },
+                    barWidth: '60%',
+                    label: { show: true, position: 'top', fontSize: 12 }
+                }]
+            });
+        }
+
+        async function render512() {
+            const chart10 = initEchart("chart_5_1_2_10");
+            const data10 = await loadJsonFile("5.1.2_top10_contribution.json");
+
+            if (!data10 || data10.length === 0) {
+                chart10.setOption({ title: { text: "5.1.2 数据加载失败", left: "center", top: "center" } });
+            } else {
+                const top10UserCount = data10[0]["前10%用户数量"];
+                const top10Contribution = data10[0]["前10%用户评分贡献占比(%)"];
+                const otherContribution = 100 - top10Contribution;
+                const otherUserCount = Math.round(top10UserCount / 0.1 - top10UserCount);
+
+                const pieData = [
+                    { name: `前10%用户 (${top10UserCount}人)`, value: top10Contribution },
+                    { name: `剩余90%用户 (${otherUserCount}人)`, value: otherContribution }
+                ];
+
+                chart10.setOption({
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: '{b}<br/>评分贡献占比：{c}%<br/>占比：{d}%'
+                    },
+                    legend: { orient: 'vertical', left: 'left', top: 'center' },
+                    series: [{
+                        name: '评分贡献占比',
+                        type: 'pie',
+                        radius: ['40%', '70%'],
+                        data: pieData,
+                        label: {
+                            show: true,
+                            formatter: '{b}: {c}%'
+                        },
+                        itemStyle: {
+                            color: function(params) {
+                                const colorList = ['#409EFF', '#67C23A'];
+                                return colorList[params.dataIndex];
+                            }
+                        }
+                    }]
+                });
+            }
+
+            const chart50 = initEchart("chart_5_1_2_50");
+            const data50 = await loadJsonFile("5.1.2_top50_active_users.json");
+
+            if (!data50 || data50.length === 0) {
+                chart50.setOption({ title: { text: "5.1.2 Top50数据加载失败", left: "center", top: "center" } });
+            } else {
+                const xData = data50.map(item => item.UserID);
+                const yData = data50.map(item => item["评分次数"]);
+
+                chart50.setOption({
+                    tooltip: {
+                        trigger: 'axis',
+                        formatter: '用户ID：{b}<br/>评分次数：{c}次'
+                    },
+                    xAxis: {
+                        type: 'category',
+                        data: xData,
+                        name: '用户ID',
+                        nameTextStyle: { fontSize: 14 },
+                        axisLabel: {
+                            rotate: 45,
+                            fontSize: 10
+                        }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: '评分次数',
+                        nameTextStyle: { fontSize: 14 },
+                        min: 0
+                    },
+                    series: [{
+                        name: '评分次数',
+                        type: 'bar',
+                        data: yData,
+                        itemStyle: { color: '#E6A23C' },
+                        barWidth: '60%',
+                        label: {
+                            show: true,
+                            position: 'top',
+                            fontSize: 10
+                        }
+                    }]
+                });
+            }
+        }
+
+        async function render513() {
+            const chartContainer = document.getElementById("chart_5_1_3");
+            if (!chartContainer) {
+                console.error("未找到5.1.3图表容器");
+                return;
+            }
+            chartContainer.style.height = "100%";
+            const chart = echarts.init(chartContainer);
+
+            const data = await loadJsonFile("5.1.3_user_genre_preference.json");
+            if (!data || data.length === 0) {
+                chart.setOption({
+                    title: { text: "5.1.3 数据加载失败", left: "center", top: "center" }
+                });
+                return;
+            }
+
+            const userGenreMap = {};
+            data.forEach(item => {
+                const userId = item.UserID;
+                const genre = item.Genre;
+                const count = item["评分次数"];
+
+                if (!userGenreMap[userId]) {
+                    userGenreMap[userId] = { total: 0, genres: {} };
+                }
+                userGenreMap[userId].genres[genre] = count;
+                userGenreMap[userId].total += count;
+            });
+
+            const userList = Object.keys(userGenreMap).slice(0, 6);
+            const userPieDataList = [];
+            userList.forEach(userId => {
+                const userData = userGenreMap[userId];
+                const pieData = Object.keys(userData.genres).map(genre => {
+                    const count = userData.genres[genre];
+                    const percentage = ((count / userData.total) * 100).toFixed(2);
+                    return {
+                        name: `${genre}`,
+                        value: count,
+                        percentage: percentage,
+                        count: count
+                    };
+                }).sort((a, b) => b.value - a.value);
+
+                userPieDataList.push({
+                    userId: userId,
+                    total: userData.total,
+                    pieData: pieData
+                });
+            });
+
+            const itemsPerRow = 3;
+            const pieWidth = 25;
+            const pieHeight = 25;
+            const series = [];
+
+            userPieDataList.forEach((userItem, index) => {
+                const row = Math.floor(index / itemsPerRow);
+                const col = index % itemsPerRow;
+
+                const centerX = col * (pieWidth + 5) + pieWidth/2 + "%";
+                const centerY = row === 0 ? 20 + "%" : 70 + "%";
+
+                series.push({
+                    name: `用户${userItem.userId} (总评分${userItem.total}次)`,
+                    type: 'pie',
+                    radius: ['17.5%', '35%'],
+                    center: [centerX, centerY],
+                    labelLine: {
+                        show: true,
+                        length: 4,
+                        length2: 2,
+                        lineStyle: { width: 0.8 }
+                    },
+                    label: {
+                        show: true,
+                        formatter: "{b}: {c}次",
+                        fontSize: 8,
+                        position: "outside"
+                    },
+                    tooltip: {
+                        formatter: (params) => {
+                            return `用户ID：${userItem.userId}<br/>
+                                    类型：${params.name}<br/>
+                                    评分次数：${params.data.count}次<br/>
+                                    占比：${params.data.percentage}%<br/>
+                                    总评分：${userItem.total}次`;
+                        }
+                    },
+                    data: userItem.pieData,
+                    itemStyle: {
+                        color: (params) => {
+                            const colorMap = {
+                                'Drama':'#409EFF','Comedy':'#67C23A','Thriller':'#E6A23C',
+                                'Horror':'#F56C6C','Action':'#909399','Crime':'#722ED1',
+                                'Romance':'#FF9768','Adventure':'#FF6B9D','SciFi':'#C41D7F',
+                                'Mystery':'#5B8FF9','Fantasy':'#5AD8A6','Children':'#F6BD16',
+                                'Animation':'#E8684A','Documentary':'#269A99','War':'#86909C',
+                                'Musical':'#7B67EE','Western':'#FF8042','FilmNoir':'#00C48C',
+                                'IMAX':'#FFCC00'
+                            };
+                            return colorMap[params.name] || colorMap[Object.keys(colorMap)[params.dataIndex % Object.keys(colorMap).length]];
+                        }
+                    }
+                });
+            });
+
+            chart.setOption({
+                tooltip: { trigger: 'item' },
+                legend: {
+                    show: true,
+                    type: 'scroll',
+                    orient: 'vertical',
+                    right: 20,
+                    top: 'middle',
+                    textStyle: { fontSize: 10 },
+                    pageIconSize: 10,
+                    pageTextStyle: { fontSize: 9 }
+                },
+                series: series,
+                grid: { show: false }
+            });
+
+            window.addEventListener('resize', () => chart.resize());
+        }
+
+        async function render521() {
+            const chart = initEchart("chart_5_2_1");
+            const data = await loadJsonFile("5.2.1_genre_distribution.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.2.1 数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const xData = data.map(item => item.Genre);
+            const yData = data.map(item => item["电影数量"]);
+            const percentData = data.map(item => item["占比(%)"]);
+
+            chart.setOption({
+                title: {
+                    text: "5.2.1 电影类型分布",
+                    left: "center",
+                    top: 10,
+                    fontSize: 16
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        const idx = params.dataIndex;
+                        return `电影类型：${xData[idx]}<br/>
+                                电影数量：${yData[idx]} 部<br/>
+                                占比：${percentData[idx]}%`;
+                    }
+                },
+                xAxis: {
+                    type: 'category',
+                    data: xData,
+                    name: '电影类型',
+                    nameTextStyle: { fontSize: 14, padding: [0, 0, 10, 0] },
+                    axisLabel: {
+                        rotate: 30,
+                        fontSize: 11
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '电影数量（部）',
+                    nameTextStyle: { fontSize: 14, padding: [0, 10, 0, 0] },
+                    min: 0,
+                    axisLabel: { fontSize: 11 }
+                },
+                series: [{
+                    name: '电影数量',
+                    type: 'bar',
+                    data: yData,
+                    barWidth: '60%',
+                    itemStyle: {
+                        color: function(params) {
+                            const colorMap = {
+                                'Drama':'#409EFF','Comedy':'#67C23A','Thriller':'#E6A23C',
+                                'Romance':'#FF9768','Action':'#909399','Crime':'#722ED1',
+                                'Adventure':'#FF6B9D','Horror':'#F56C6C','SciFi':'#C41D7F',
+                                'Fantasy':'#5AD8A6'
+                            };
+                            return colorMap[params.name] || colorMap[Object.keys(colorMap)[params.dataIndex % Object.keys(colorMap).length]];
+                        }
+                    },
+                    label: {
+                        show: true,
+                        position: 'top',
+                        fontSize: 10,
+                        formatter: function(params) {
+                            const idx = params.dataIndex;
+                            return `${params.value} (${percentData[idx]}%)`;
+                        }
+                    }
+                }]
+            });
+
+            window.addEventListener('resize', () => chart.resize());
+        }
+
+        async function render522() {
+            const chart = initEchart("chart_5_2_2");
+            const data = await loadJsonFile("5.2.2_top20_movie.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.2.2 数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const xData = data.map(item => {
+                const shortTitle = item.Title.length > 20 ? item.Title.substring(0, 20) + "..." : item.Title;
+                return `${item.MovieID}-${shortTitle}`;
+            });
+            const scoreData = data.map(item => item["平均评分"]);
+            const countData = data.map(item => item["评分次数"]);
+
+            chart.setOption({
+                title: {
+                    text: "5.2.2 Top20电影平均评分",
+                    left: "center",
+                    top: 10,
+                    fontSize: 16
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        const idx = params.dataIndex;
+                        return `电影ID：${data[idx].MovieID}<br/>
+                                标题：${data[idx].Title}<br/>
+                                平均评分：${scoreData[idx]} 分<br/>
+                                评分次数：${countData[idx]} 次`;
+                    }
+                },
+                legend: {
+                    data: ['平均评分'],
+                    left: 'left',
+                    top: 40
+                },
+                grid: {
+                    left: '15%',
+                    right: '5%',
+                    top: '15%',
+                    bottom: '10%'
+                },
+                xAxis: {
+                    type: 'value',
+                    name: '平均评分',
+                    nameTextStyle: { fontSize: 14 },
+                    min: 3,
+                    max: 5,
+                    interval: 0.5,
+                    axisLabel: { fontSize: 11 },
+                    axisTick: {
+                        alignWithLabel: true,
+                        interval: 0,
+                        data: [3, 3.5, 4, 4.5, 5]
+                    }
+                },
+                yAxis: {
+                    type: 'category',
+                    data: xData,
+                    name: '电影（ID-标题）',
+                    nameTextStyle: { fontSize: 14, padding: [0, 0, 10, 0] },
+                    axisLabel: {
+                        fontSize: 9,
+                        align: 'right'
+                    }
+                },
+                series: [{
+                    name: '平均评分',
+                    type: 'bar',
+                    data: scoreData,
+                    barWidth: '70%',
+                    itemStyle: {
+                        color: function(params) {
+                            const score = params.value;
+                            if (score >= 4.4) return '#409EFF';
+                            if (score >= 4.3) return '#67C23A';
+                            return '#E6A23C';
+                        }
+                    },
+                    label: {
+                        show: true,
+                        position: 'right',
+                        fontSize: 10,
+                        formatter: '{c} 分'
+                    }
+                }]
+            });
+
+            window.addEventListener('resize', () => chart.resize());
+        }
+
+        async function render53_1_dist() {
+            const chart = initEchart("chart_5_3_1_dist");
+            const data = await loadJsonFile("5.3.1_consistency_dist.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.3.1 数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const levels = data.map(item => item["一致性等级"]);
+            const userCounts = data.map(item => item["用户数量"]);
+
+            chart.setOption({
+                tooltip: { trigger: 'axis', formatter: '一致性等级：{b}<br/>用户数量：{c}人' },
+                xAxis: {
+                    type: 'category',
+                    data: levels,
+                    name: '评分一致性等级',
+                    nameTextStyle: { fontSize: 14 },
+                    axisLabel: { fontSize: 12 }
+                },
+                yAxis: { type: 'value', name: '用户数量', nameTextStyle: { fontSize: 14 }, min: 0 },
+                series: [{
+                    name: '用户数量',
+                    type: 'bar',
+                    data: userCounts,
+                    itemStyle: {
+                        color: (params) => {
+                            const colorMap = { "高度一致": "#67c23a", "较一致": "#409EFF", "不一致": "#f56c6c" };
+                            return colorMap[levels[params.dataIndex]] || "#909399";
+                        }
+                    },
+                    barWidth: '60%',
+                    label: { show: true, position: 'top', fontSize: 12, formatter: '{c} 人' }
+                }]
+            });
+        }
+
+        async function render53_1_user() {
+            const chart = initEchart("chart_5_3_1_user");
+            const data = await loadJsonFile("5.3.1_consistency_diff.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.3.1 数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const levels = data.map(item => item["一致性等级"]);
+            const avgDiffs = data.map(item => item["评分差值均值"].toFixed(2));
+            const maxDiffs = data.map(item => item["评分差值最大值"].toFixed(2));
+            const minDiffs = data.map(item => item["评分差值最小值"].toFixed(2));
+
+            chart.setOption({
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: (params) => {
+                        const level = params[0].axisValue;
+                        let str = `一致性等级：${level}<br/>`;
+                        params.forEach(p => str += `${p.seriesName}：${p.data}<br/>`);
+                        return str;
+                    }
+                },
+                legend: { data: ['评分差值均值', '评分差值最大值', '评分差值最小值'], top: '5%', left: 'center' },
+                xAxis: { type: 'category', data: levels, name: '一致性等级', nameTextStyle: { fontSize: 14 } },
+                yAxis: { type: 'value', name: '评分差值', nameTextStyle: { fontSize: 14 }, min: 0 },
+                series: [
+                    { name: '评分差值均值', type: 'bar', data: avgDiffs, itemStyle: { color: '#409EFF' }, label: { show: true, position: 'top' } },
+                    { name: '评分差值最大值', type: 'bar', data: maxDiffs, itemStyle: { color: '#f56c6c' }, label: { show: true, position: 'top' } },
+                    { name: '评分差值最小值', type: 'bar', data: minDiffs, itemStyle: { color: '#67c23a' }, label: { show: true, position: 'top' } }
+                ]
+            });
+        }
+
+        async function render53_2_high() {
+            const chart = initEchart("chart_5_3_2_high");
+            const data = await loadJsonFile("5.3.2_high_score_tags.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.3.2 高分标签数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const pieData = data.map(item => ({
+                name: item.Tag,
+                value: item["标签频次"]
+            }));
+
+            chart.setOption({
+                title: {
+                    text: "高分电影标签频次分布",
+                    left: "center",
+                    top: 10,
+                    fontSize: 14
+                },
+                tooltip: { trigger: 'item', formatter: '{b}：{c}次 ({d}%)' },
+                legend: {
+                    orient: 'vertical',
+                    right: 10,
+                    top: 'center',
+                    textStyle: { fontSize: 10 }
+                },
+                series: [{
+                    type: 'pie',
+                    radius: ['30%', '70%'],
+                    data: pieData,
+                    label: {
+                        show: true,
+                        fontSize: 9,
+                        formatter: '{b}: {c}次'
+                    }
+                }]
+            });
+        }
+
+        async function render53_2_low() {
+            const chart = initEchart("chart_5_3_2_low");
+            const data = await loadJsonFile("5.3.2_low_score_tags.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.3.2 低分标签数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const pieData = data.map(item => ({
+                name: item.Tag,
+                value: item["标签频次"]
+            }));
+
+            chart.setOption({
+                title: {
+                    text: "低分电影标签频次分布",
+                    left: "center",
+                    top: 10,
+                    fontSize: 14
+                },
+                tooltip: { trigger: 'item', formatter: '{b}：{c}次 ({d}%)' },
+                legend: {
+                    orient: 'vertical',
+                    right: 10,
+                    top: 'center',
+                    textStyle: { fontSize: 10 }
+                },
+                series: [{
+                    type: 'pie',
+                    radius: ['30%', '70%'],
+                    data: pieData,
+                    label: {
+                        show: true,
+                        fontSize: 9,
+                        formatter: '{b}: {c}次'
+                    }
+                }]
+            });
+        }
+
+        async function render53_3() {
+            const chart = initEchart("chart_5_3_3");
+            const data = await loadJsonFile("5.3.3_tag_rating_preference.json");
+
+            if (!data || data.length === 0) {
+                chart.setOption({ title: { text: "5.3.3 数据加载失败", left: "center", top: "center" } });
+                return;
+            }
+
+            const tags = data.map(item => item["Tag"]);
+            const scores = data.map(item => item["标签平均评分"]);
+
+            chart.setOption({
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: (params) => {
+                        const idx = params[0].dataIndex;
+                        const item = data[idx];
+                        return `标签：${item.Tag}<br/>平均评分：${item.标签平均评分}<br/>关联电影数：${item.关联电影数量}<br/>总评分次数：${item.总评分次数}`;
+                    }
+                },
+                xAxis: {
+                    type: 'category',
+                    data: tags,
+                    axisLabel: { rotate: 45, fontSize: 10 },
+                    name: '标签名称',
+                    nameTextStyle: { fontSize: 14 }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '标签平均评分',
+                    nameTextStyle: { fontSize: 14 },
+                    min: 2, max: 5, interval: 1
+                },
+                series: [{
+                    name: '标签平均评分',
+                    type: 'bar',
+                    data: scores,
+                    itemStyle: { color: '#ffa94d' },
+                    label: { show: true, position: 'top', fontSize: 10 }
+                }]
+            });
+        }
+
+        window.onload = async function() {
+            console.log("页面开始加载图表...");
+            await render511();
+            await render512();
+            render513();
+
+            await render521();
+            await render522();
+
+            await render53_1_dist();
+            await render53_1_user();
+
+            await render53_2_high();
+            await render53_2_low();
+
+            await render53_3();
+            console.log(" 所有图表渲染完成");
+
+            window.addEventListener('resize', () => {
+                document.querySelectorAll('.chart-box').forEach(el => {
+                    const chart = echarts.getInstanceByDom(el);
+                    if (chart) chart.resize();
+                });
+            });
+        };
+    </script>
+</body>
+</html>
